@@ -6,6 +6,7 @@ from time import sleep
 SAMPLE_RATE = 10e3 # in samples
 SUBSAMPLING_TIME = 10 # in s
 BUFFER_SIZE = SAMPLE_RATE*SUBSAMPLING_TIME
+
 CHANNEL_NB = 10
 CHANNELS = tuple(range(CHANNEL_NB))
 
@@ -48,17 +49,14 @@ def calibration_routine(board:dq.mcc128) -> None: # needed?
     print(coeff) # just this for now
 
 
-def loop(board:dq.mcc128) -> None:
-    status, buff = board.a_in_scan_read()
-
-
-
-def check_scan_start(board:dq.mcc128) -> bool:
+def check_scan_start(board:dq.mcc128) -> None:
     scan_status = board.a_in_scan_status()
     if scan_status.hardware_overrun or scan_status.buffer_overrun:
         print("Hardware or Buffer Overrun!")
         # raise dq.HatError
-    return scan_status.running
+    if not scan_status.running:
+        print("Unsuccessful board start. Try again")
+        kill(board)
 
 
 def print_scan_status(board:dq.mcc128) -> None:
@@ -67,7 +65,15 @@ def print_scan_status(board:dq.mcc128) -> None:
 def kill(board:dq.mcc128) -> None:
     board.a_in_scan_stop()
     board.a_in_scan_cleanup()
+    print("Board Killed.")
     raise Exception
+
+
+def loop(board:dq.mcc128) -> None:
+    status, buff = board.a_in_scan_read(BUFFER_SIZE, timeout=0)
+    
+
+
 
 #--------------------------------------#
 def main(*args, **kwargs) -> None:
@@ -75,19 +81,20 @@ def main(*args, **kwargs) -> None:
     calibration_routine(board)
     print_board_properties(board)
 
-    board.a_in_scan_start()
+    board.a_in_scan_start(CHANNELS, SAMPLE_RATE, BUFFER_SIZE, dq.OptionFlags.DEFAULT)
+
+    check_scan_start(board) 
+    
     i = 0
     while True:
-        sleep(5)
+        sleep(SUBSAMPLING_TIME)
         loop(board)
-        i += 1
-        if i % SAMPLE_RATE: print_scan_status()
 
+        i += 1
+        if i % 10 == 0: print_scan_status()
         if i == np.inf: break
 
     kill(board)
-
-
 
 
 
