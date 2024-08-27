@@ -57,7 +57,7 @@ def initialize_board() -> dq.mcc128:
     return board
 
 
-def calibration_routine(board:dq.mcc128) -> None: # needed?
+def calibrate(board:dq.mcc128) -> None: # needed?
     coeff = board.calibration_coefficient_read(a_in_range=board.a_in_range_read())
     print(coeff) # just this for now
 
@@ -115,7 +115,7 @@ def main(*args, **kwargs) -> None:
     end_date = get_end_date()        
 
     board = initialize_board()
-    calibration_routine(board)
+    calibrate(board)
     print_board_properties(board)
 
     data = initialize_dict()
