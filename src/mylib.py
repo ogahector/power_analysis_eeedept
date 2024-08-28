@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
-import statsmodels.api as sm
 import matplotlib.pyplot as plt
 from fitter import Fitter, get_common_distributions
 
@@ -55,14 +54,14 @@ def get_best_dist(data: pd.Series) -> None:
     best_dist, best_p = (max(dist_results, key=lambda item: item[1]))
     # store the name of the best fit and its p value
 
-    print("Best fitting distribution: "+str(best_dist))
+    print("\nBest fitting distribution: "+str(best_dist))
     print("Best p value: "+ str(best_p))
     print("Parameters for the best fit: "+ str(params[best_dist]))
 
     return best_dist, best_p, params[best_dist]
 
 
-def statistical_analysis(data: pd.Series, bins=15, header='Power') -> None:
+def statistical_analysis(data: pd.Series, bins=15, header='Power', cdf=False) -> None:
     
     print_data_statistics(data)
 
@@ -83,16 +82,16 @@ def statistical_analysis(data: pd.Series, bins=15, header='Power') -> None:
 
     ## Q-Q PLOT
     ax.append(plt.subplot(*FIGDIM, 2))
-    sm.qqplot(data, fit=False, line='45', ax=ax[-1])
-    stats.probplot(data, dist='norm', plot=plt, rvalue=True)
+    (_, (slope, intercept, _)) = stats.probplot(data, dist='norm', plot=plt, rvalue=True)
+    plt.annotate(text=f'y={slope:.4f}*x + {intercept:.4f}', xy=(0.5, 0.15), xycoords='axes fraction', fontsize=16, color='r')
     plt.grid()
     plt.legend(['Q-Q', 'Normal Dist'], loc='upper left')
     plt.title('Q-Q Plot for Normal Distribution')
 
     ## FIT TO OTHER DISTRIBUTIONS / FIND BEST FIT
     ax.append(plt.subplot(*FIGDIM, 3))
-    best_dist = get_best_dist(data)
-    dist = getattr(stats, best_dist[0])
+    dist_name, p, dist_args = get_best_dist(data)
+    dist = getattr(stats, dist_name)
     x = np.linspace(min(data), max(data), 100)
     plt.hist(data, bins=bins, edgecolor='k', alpha=0.75, label='Histogram')
     plt.xlabel(header)
@@ -100,16 +99,17 @@ def statistical_analysis(data: pd.Series, bins=15, header='Power') -> None:
     plt.legend(loc='upper left')
 
     ax[-1]=ax[-1].twinx()
-    plt.plot(x, dist.pdf(x, *best_dist[2]), color='r', linestyle='-', label='Dist of Best Fit PDF')
-    # plt.plot(x, dist.cdf(x, *best_dist[2]), color='g', linestyle='-', label='Dist of Best Fit CDF')
-    plt.text(x=0.9*max(data), y=0.8*ax[-1].get_ylim()[1], s=best_dist[0].upper(), fontsize=16, color='r')
+    plt.plot(x, dist.pdf(x, *dist_args), color='r', linestyle='-', label='Dist of Best Fit PDF')
+    if cdf: plt.plot(x, dist.cdf(x, *dist_args), color='g', linestyle='-', label='Dist of Best Fit CDF')
+    plt.annotate(text=dist_name.upper(), xy=(0.7, 0.7), xycoords='axes fraction', fontsize=16, color='r')
     plt.legend(loc='upper right')
 
     ## Q-Q PLOT FOR THE BEST FIT
     ax.append(plt.subplot(*FIGDIM, 4))
-    stats.probplot(data, dist=best_dist[0], plot=plt, rvalue=True)
+    (_, (slope, intercept, _)) = stats.probplot(data, sparams=dist_args, dist=dist_name, fit=True, plot=plt, rvalue=True)
+    plt.annotate(text=f'y={slope:.4f}*x + {intercept:.4f}', xy=(0.5, 0.15), xycoords='axes fraction', fontsize=16, color='r')
     plt.grid()
-    plt.legend(['Q-Q', best_dist[0].upper()+' Dist'])
+    plt.legend(['Q-Q', dist_name.upper()+' Dist'])
     plt.show()
 
 # if __name__ == '__main__':
