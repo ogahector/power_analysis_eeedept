@@ -1,8 +1,10 @@
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
+import statsmodels.graphics.gofplots as sm
 import matplotlib.pyplot as plt
 from fitter import Fitter, get_common_distributions
+from seaborn import kdeplot
 
 def print_data_statistics(data: pd.Series) -> None:
     print("DATASET STATISTICS:")
@@ -24,9 +26,12 @@ def print_data_statistics(data: pd.Series) -> None:
     print()
 
 
-def fit_using_Fitter(data: pd.Series) -> None:
-    fit = Fitter(data, distributions=['norm', 'lognorm', 'expon', 'gamma', 'beta'])
-    # fit = Fitter(data)
+def fit_using_Fitter(data: pd.Series) -> None: # TAKES MASSIVE AMOUNTS OF TIME: DO NOT USE!
+    dist_names = get_common_distributions()
+    dist_names.extend(['arcsine', 'cosine', 'expon', 'weibull_max', 'weibull_min', 
+                          'dweibull', 't', 'pareto', 'exponnorm', 'lognorm',
+                         "norm", "exponweib", "weibull_max", "weibull_min", "pareto", "genextreme"])
+    fit = Fitter(data, distributions=dist_names)
     fit.fit()
     fit.summary(Nbest=5)
     print(f"Best Fit: {fit.get_best()}")
@@ -51,8 +56,8 @@ def get_best_dist(data: pd.Series) -> None:
         dist_results.append((dist_name, p))
 
     # select the best fitted distribution
-    best_dist, best_p = (max(dist_results, key=lambda item: item[1]))
     # store the name of the best fit and its p value
+    best_dist, best_p = (max(dist_results, key=lambda item: item[1]))
 
     print("\nBest fitting distribution: "+str(best_dist))
     print("Best p value: "+ str(best_p))
@@ -61,39 +66,44 @@ def get_best_dist(data: pd.Series) -> None:
     return best_dist, best_p, params[best_dist]
 
 
-def statistical_analysis(data: pd.Series, bins=15, header='Power', cdf=False) -> None:
+def statistical_analysis(data: pd.Series, bins=15, header='Power', cdf=False, modes:list=[]) -> None:
     
     print_data_statistics(data)
 
     FIGDIM = (2, 2)
+
+    # GET BEST DISTS AND DISTARGS
+    dist_name, p, dist_args = get_best_dist(data)
+    dist = getattr(stats, dist_name)
+    x = np.linspace(min(data), max(data), 100)
 
     ## HISTOGRAM AND KDE
     plt.figure(figsize=(16, 10))
     ax = []
     ax.append(plt.subplot(*FIGDIM, 1))
     plt.hist(data, bins=bins, edgecolor='k', alpha=0.75, label='Histogram')
+    plt.vlines(modes, ymin=ax[-1].get_ylim()[0], ymax=ax[-1].get_ylim()[1], colors='g', linewidth=3)
     plt.ylabel('Number of Samples')
     plt.xlabel(header)
     plt.legend(loc='upper left')
     ax[0]=ax[0].twinx()
-    data.plot.kde(color='r')
+    # data.plot.kde(color='r')
+    kdeplot(data, color='r')
     plt.legend(['KDE'], loc='upper right')
     plt.title(header+' Histogram and KDE')
 
     ## Q-Q PLOT
     ax.append(plt.subplot(*FIGDIM, 2))
-    (_, (slope, intercept, _)) = stats.probplot(data, dist='norm', plot=plt, rvalue=True)
-    plt.annotate(text=f'y={slope:.4f}*x + {intercept:.4f}', xy=(0.5, 0.15), xycoords='axes fraction', fontsize=16, color='r')
+    # plt.annotate(text=f'y={slope:.4f}*x + {intercept:.4f}', xy=(0.5, 0.15), xycoords='axes fraction', fontsize=16, color='r')
+    sm.qqplot(data=data, dist=stats.norm, distargs=(), loc=np.mean(data), scale=np.std(data), fit=True, line='45', ax=ax[-1])
     plt.grid()
     plt.legend(['Q-Q', 'Normal Dist'], loc='upper left')
     plt.title('Q-Q Plot for Normal Distribution')
 
     ## FIT TO OTHER DISTRIBUTIONS / FIND BEST FIT
     ax.append(plt.subplot(*FIGDIM, 3))
-    dist_name, p, dist_args = get_best_dist(data)
-    dist = getattr(stats, dist_name)
-    x = np.linspace(min(data), max(data), 100)
     plt.hist(data, bins=bins, edgecolor='k', alpha=0.75, label='Histogram')
+    plt.vlines(modes, ymin=ax[-1].get_ylim()[0], ymax=ax[-1].get_ylim()[1], colors='g', linewidth=3)
     plt.xlabel(header)
     plt.ylabel('Number of Samples')
     plt.legend(loc='upper left')
@@ -106,11 +116,8 @@ def statistical_analysis(data: pd.Series, bins=15, header='Power', cdf=False) ->
 
     ## Q-Q PLOT FOR THE BEST FIT
     ax.append(plt.subplot(*FIGDIM, 4))
-    (_, (slope, intercept, _)) = stats.probplot(data, sparams=dist_args, dist=dist_name, fit=True, plot=plt, rvalue=True)
-    plt.annotate(text=f'y={slope:.4f}*x + {intercept:.4f}', xy=(0.5, 0.15), xycoords='axes fraction', fontsize=16, color='r')
+    # plt.annotate(text=f'y={slope:.4f}*x + {intercept:.4f}', xy=(0.5, 0.15), xycoords='axes fraction', fontsize=16, color='r')
+    sm.qqplot(data=data, dist=dist, distargs=(), loc=dist_args[0], scale=dist_args[1], fit=True, line='45', ax=ax[-1])
     plt.grid()
     plt.legend(['Q-Q', dist_name.upper()+' Dist'])
     plt.show()
-
-# if __name__ == '__main__':
-    # main()
