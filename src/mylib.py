@@ -6,6 +6,22 @@ import matplotlib.pyplot as plt
 from fitter import Fitter, get_common_distributions
 from seaborn import kdeplot
 
+## IMPORT DATA
+def import_csv(filename:str='') -> pd.DataFrame:
+    df = pd.read_csv(filename).drop(columns="No.").drop(0)
+    df["Date/Time"] = pd.to_datetime(df["Date/Time"], format='%d/%m/%Y %H:%M', utc=True)
+    df.set_index(['Date/Time'], inplace=True, drop=False)
+    return df
+
+
+def import_cpu_usage(filename:str='', ref:pd.DataFrame|None=None, truncate:bool=True) -> pd.DataFrame:
+    df = pd.read_csv(filename)
+    df['now'] = pd.to_datetime(df['now'], utc=True)
+    if truncate: df = df.set_index(df['now'], drop=False).truncate(before=ref.index[0], 
+                                                  after=ref.index[-1])
+    return df
+
+### STATISTICAL ANALYSIS
 def print_data_statistics(data: pd.Series) -> None:
     print("DATASET STATISTICS:")
     print(f"Mean: {np.mean(data)}")
@@ -120,4 +136,63 @@ def statistical_analysis(data: pd.Series, bins=15, header='Power', cdf=False, mo
     sm.qqplot(data=data, dist=dist, distargs=(), loc=dist_args[0], scale=dist_args[1], fit=True, line='45', ax=ax[-1])
     plt.grid()
     plt.legend(['Q-Q', dist_name.upper()+' Dist'])
+    plt.show()
+
+
+## HELPER AND UTILITIES
+def hour_to_Timedelta(h: any, unit:str='h') -> pd.Timedelta | list[pd.Timedelta]:
+    if type(h) == float: return pd.Timedelta(h, unit=unit)
+    elif hasattr(h, '__len__'): return [pd.Timedelta(i, unit=unit) for i in h]
+    else: return None
+
+
+def separate_by_weekdays(data:pd.Series, header:str='') -> pd.Series:
+    days_of_the_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+    print("Mean total " + header + ": " + str(data.mean()) + " kW")
+    print("Median total " + header + ": " + str(data.median()) + " kW\n")
+
+    ret = data.groupby(data.index.weekday).apply(list)
+
+    ret["Weekend"] = ret[5] + ret[6] # 5 == Saturday, 6 == Sunday
+    ret["Weekdays"] = ret[0] + ret[1] + ret[2] + ret[3] + ret[4]
+
+    print("Mean Weekend " + header + ": " + str(np.mean(ret['Weekend'])))
+    print("Mean Weekdays " + header + ": " + str(np.mean(ret['Weekdays'])))
+
+    for i in range(7):
+        print("Mean " + header + " on " + days_of_the_week[i] + ": " + str(np.mean(ret[i])))
+    for i in range(7):
+        print("Median " + header + " on " + days_of_the_week[i] + ": " + str(np.median(ret[i])))
+
+    return ret
+
+
+def cpu_corr_by_ref(cpu:pd.Series, ref:pd.Series, time:str, passedin:dict, name:str='', normalize:bool=False) -> None:
+    # modifies IN PLACE
+    if normalize: 
+        passedin[time] = cpu.groupby(cpu.index.normalize()).mean().truncate(
+        before=ref.index[0], after=ref.index[-1])
+    else: 
+        passedin[time] = cpu.groupby(cpu.index.round(time)).mean().truncate(
+        before=ref.index[0], after=ref.index[-1])
+    print(f'{name} {time} Correlation: {ref.corr(passedin[time])}')
+    
+
+## PLOTS
+def plot_raw_data(df:pd.DataFrame, figsize:tuple=(16, 5)) -> None:
+    headers = df.columns.values.tolist()[1:]
+
+    figsize = (figsize[0], figsize[1]*(len(headers)))
+
+    plt.figure(figsize=figsize)
+
+    for i, name in enumerate(headers):
+        plt.subplot(len(headers), 1, i+1)
+        plt.plot(df.index, df[name], '-b')
+        plt.xlabel('Date/Time')
+        plt.ylabel(name)
+        plt.title(name + ' against Date/Time')
+
+    plt.tight_layout()
     plt.show()
