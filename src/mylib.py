@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
+import scipy.signal as sig
 import statsmodels.graphics.gofplots as sm
 import matplotlib.pyplot as plt
 from fitter import Fitter, get_common_distributions
@@ -68,7 +69,7 @@ def get_best_dist(data: pd.Series) -> None:
         params[dist_name] = param
         # Applying the Kolmogorov-Smirnov test
         _, p = stats.kstest(data, dist_name, args=param)
-        print("p value for "+dist_name+" = "+str(p))
+        # print("p value for "+dist_name+" = "+str(p))
         dist_results.append((dist_name, p))
 
     # select the best fitted distribution
@@ -82,11 +83,11 @@ def get_best_dist(data: pd.Series) -> None:
     return best_dist, best_p, params[best_dist]
 
 
-def statistical_analysis(data: pd.Series, bins=15, header='Power', cdf=False, modes:list=[]) -> None:
-    
+def statistical_analysis(data: pd.Series, bins=15, header='Power', cdf=False, modes:list=[], include_autocorr:bool=False) -> None:
+    print(header.upper().center(75, '-'))
     print_data_statistics(data)
 
-    FIGDIM = (2, 2)
+    FIGDIM = (3, 2) if include_autocorr else (2, 2)
 
     # GET BEST DISTS AND DISTARGS
     dist_name, p, dist_args = get_best_dist(data)
@@ -98,7 +99,8 @@ def statistical_analysis(data: pd.Series, bins=15, header='Power', cdf=False, mo
     ax = []
     ax.append(plt.subplot(*FIGDIM, 1))
     plt.hist(data, bins=bins, edgecolor='k', alpha=0.75, label='Histogram')
-    plt.vlines(modes, ymin=ax[-1].get_ylim()[0], ymax=ax[-1].get_ylim()[1], colors='g', linewidth=3)
+    ylims = plt.gca().get_ylim()
+    plt.vlines(modes, ymin=ylims[0], ymax=ylims[1], colors='g', linewidth=3)
     plt.ylabel('Number of Samples')
     plt.xlabel(header)
     plt.legend(loc='upper left')
@@ -119,7 +121,8 @@ def statistical_analysis(data: pd.Series, bins=15, header='Power', cdf=False, mo
     ## FIT TO OTHER DISTRIBUTIONS / FIND BEST FIT
     ax.append(plt.subplot(*FIGDIM, 3))
     plt.hist(data, bins=bins, edgecolor='k', alpha=0.75, label='Histogram')
-    plt.vlines(modes, ymin=ax[-1].get_ylim()[0], ymax=ax[-1].get_ylim()[1], colors='g', linewidth=3)
+    ylims = plt.gca().get_ylim()
+    plt.vlines(modes, ymin=ylims[0], ymax=ylims[1], colors='g', linewidth=3)
     plt.xlabel(header)
     plt.ylabel('Number of Samples')
     plt.legend(loc='upper left')
@@ -136,8 +139,63 @@ def statistical_analysis(data: pd.Series, bins=15, header='Power', cdf=False, mo
     sm.qqplot(data=data, dist=dist, distargs=(), loc=dist_args[0], scale=dist_args[1], fit=True, line='45', ax=ax[-1])
     plt.grid()
     plt.legend(['Q-Q', dist_name.upper()+' Dist'])
+
+    if include_autocorr:
+        ## AUTOCORRELATION
+        ax.append(plt.subplot(*FIGDIM, 5))
+        pd.plotting.autocorrelation_plot(data, ax=plt.gca(), color='b', linestyle='-', label='Autocorrelation')
+        plt.plot(data.autocorr(), 'xr', label='Autocorrelation for Lag 1')
+        plt.grid()
+        plt.legend()
+
+        ## PSD
+        ax.append(plt.subplot(*FIGDIM, 6))
+        fs = df_av_sampling_freq(data)
+        freqs, psd = sig.welch(data, fs)
+        plt.semilogy(freqs, psd, '-b', label='PSD')
+        plt.xlabel('Frequency (Hz)')
+        plt.ylabel('Power/Frequency (dB/Hz)')
+        plt.grid()
+    
     plt.show()
 
+
+def print_psd_stats(df:pd.Series, freqs, psd, psd_peaks) -> None:
+    print(f'Autocorrelation for Lag 1: {df.autocorr()}')
+    print(f'Maximum Autocorrelation (dB): {max(psd)}')
+    print(f'Times where a peak occurs: {[hour_to_Timedelta(1/(freq*3600)) for freq in freqs[psd_peaks]]}')
+    print(f'Peak Amplitudes: {[peak for peak in psd[psd_peaks]]}')
+
+
+def autocorr_and_psd_analysis(data: pd.Series, header='Power', peaks_height:float=0) -> None:
+    fs = df_av_sampling_freq(data)
+    freqs, psd = sig.welch(data, fs)
+    psd = 10*np.log10(psd)
+    psd_peaks, _ = sig.find_peaks(psd, height=peaks_height)
+
+    print_psd_stats(data, freqs, psd, psd_peaks)
+    FIGDIM = (1, 2)
+    plt.figure(figsize=(16, 5))
+    ax = []
+
+    ## AUTOCORRELATION
+    ax.append(plt.subplot(*FIGDIM, 1))
+    pd.plotting.autocorrelation_plot(data, ax=plt.gca(), color='b', linestyle='-', label=header+' Autocorrelation')
+    plt.plot(data.autocorr(), 'xr', label=header+' Autocorrelation for Lag 1')
+    plt.grid()
+    plt.legend()
+
+    ## PSD
+    ax.append(plt.subplot(*FIGDIM, 2))
+    plt.plot(freqs*3600, psd, '-b', label=header+' PSD')
+    plt.plot(freqs[psd_peaks]*3600, psd[psd_peaks], 'xr', label='Main PSD Peaks')
+    plt.legend(loc='upper right')
+    plt.xlabel('Frequency (1/hour)')
+    plt.ylabel('Power/Frequency (dB)')
+    plt.grid()
+
+
+    plt.show()
 
 ## HELPER AND UTILITIES
 def hour_to_Timedelta(h: float | list[float], unit:str='h') -> pd.Timedelta | list[pd.Timedelta]:
@@ -193,6 +251,13 @@ def cpu_corr_by_ref(cpu:pd.Series, ref:pd.Series, time:str, passedin:dict, name:
 
 def get_name(my_var:any) -> str:
     return [name for name, v in locals().items() if v is my_var or v == my_var]
+
+
+def df_av_sampling_time(df:pd.DataFrame | pd.Series) -> float:
+    return pd.Series(df.index).diff().dropna().apply(Timedelta_to_hour).mean()*3600
+
+def df_av_sampling_freq(df:pd.DataFrame | pd.Series) -> float:
+    return 1.0/df_av_sampling_time(df)
 
 ## PLOTS
 def plot_raw_data(df:pd.DataFrame | list[pd.DataFrame], figsize:tuple=(16, 5), columnname:str='') -> None:
