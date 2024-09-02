@@ -140,10 +140,22 @@ def statistical_analysis(data: pd.Series, bins=15, header='Power', cdf=False, mo
 
 
 ## HELPER AND UTILITIES
-def hour_to_Timedelta(h: any, unit:str='h') -> pd.Timedelta | list[pd.Timedelta]:
+def hour_to_Timedelta(h: float | list[float], unit:str='h') -> pd.Timedelta | list[pd.Timedelta]:
     if type(h) == float: return pd.Timedelta(h, unit=unit)
     elif hasattr(h, '__len__'): return [pd.Timedelta(i, unit=unit) for i in h]
     else: return None
+
+
+def Timedelta_to_hour(t:pd.Timedelta | list[pd.Timedelta] | str) -> float | list[float]:
+    if hasattr(t, '__len__') and type(t) != str: [val.total_seconds()/3600 for val in t]
+    elif type(t) == pd.Timedelta: return t.total_seconds()/3600
+    else: return pd.Timedelta(t).total_seconds()/3600
+
+
+def find_nearest(array:any, val:any=0) -> any:
+    if hasattr(val, '__len__') and type(val) != str: return [find_nearest(array, i) for i in val]
+    diff_idx = np.abs(array - val).argmin()
+    return array[diff_idx] if type(array) != pd.Series else array.iloc[diff_idx], diff_idx
 
 
 def separate_by_weekdays(data:pd.Series, header:str='') -> pd.Series:
@@ -179,20 +191,38 @@ def cpu_corr_by_ref(cpu:pd.Series, ref:pd.Series, time:str, passedin:dict, name:
     print(f'{name} {time} Correlation: {ref.corr(passedin[time])}')
     
 
+def get_name(my_var:any) -> str:
+    return [name for name, v in locals().items() if v is my_var or v == my_var]
+
 ## PLOTS
-def plot_raw_data(df:pd.DataFrame, figsize:tuple=(16, 5)) -> None:
-    headers = df.columns.values.tolist()[1:]
+def plot_raw_data(df:pd.DataFrame | list[pd.DataFrame], figsize:tuple=(16, 5), columnname:str='') -> None:
+    if type(df) == pd.DataFrame:
+        headers = df.columns.values.tolist()[1:]
 
-    figsize = (figsize[0], figsize[1]*(len(headers)))
+        figsize = (figsize[0], figsize[1]*(len(headers)))
 
-    plt.figure(figsize=figsize)
+        plt.figure(figsize=figsize)
 
-    for i, name in enumerate(headers):
-        plt.subplot(len(headers), 1, i+1)
-        plt.plot(df.index, df[name], '-b')
-        plt.xlabel('Date/Time')
-        plt.ylabel(name)
-        plt.title(name + ' against Date/Time')
+        for i, name in enumerate(headers):
+            plt.subplot(len(headers), 1, i+1)
+            plt.plot(df.index, df[name], '-b')
+            plt.xlabel('Date/Time')
+            plt.ylabel(name)
+            plt.title(name + ' against Date/Time')
 
-    plt.tight_layout()
-    plt.show()
+        plt.tight_layout()
+        plt.show()
+
+    elif type(df) == list:
+        l = len(df)
+        fig, ax = plt.subplots(4, figsize=(figsize[0], l*figsize[1]))
+
+        for i, data in enumerate(df):
+            ax[i].plot(data.index, data[columnname], color='b', linestyle='-')
+            ax[i].set_xlabel('Date/Time')
+            ax[i].set_ylabel(f'DataFrame {i} Server CPU Usage')
+            ax[i].set_ylim(0, 100)
+            ax[i].set_xlim(data.index[0], data.index[-1])
+        ax[0].set_title("All CPU Usages in Time")
+        plt.tight_layout()
+        plt.show()
