@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import scipy.stats as stats
 import scipy.signal as sig
+import scipy.fft as fft
 import statsmodels.graphics.gofplots as sm
 import matplotlib.pyplot as plt
 from fitter import Fitter, get_common_distributions
@@ -163,19 +164,22 @@ def statistical_analysis(data: pd.Series, bins=15, header='Power', cdf=False, mo
 def print_psd_stats(df:pd.Series, freqs, psd, psd_peaks) -> None:
     print(f'Autocorrelation for Lag 1: {df.autocorr()}')
     print(f'Maximum Autocorrelation (dB): {max(psd)}')
-    print(f'Times where a peak occurs: {[hour_to_Timedelta(1/(freq*3600)) for freq in freqs[psd_peaks]]}')
+    print(f'Times where a peak occurs: {hour_to_Timedelta(1/(3600*freqs[psd_peaks]))}')
     print(f'Peak Amplitudes: {[peak for peak in psd[psd_peaks]]}')
 
 
-def autocorr_and_psd_analysis(data: pd.Series, header='Power', peaks_height:float=0) -> None:
+def autocorr_and_psd_analysis(data: pd.Series, header='Power', peaks_height:float=0, double_sided:bool=False) -> list | None:
     fs = df_av_sampling_freq(data)
-    freqs, psd = sig.welch(data, fs)
+    freqs, psd = sig.welch(data, fs, return_onesided=not double_sided)
     psd = 10*np.log10(psd)
     psd_peaks, _ = sig.find_peaks(psd, height=peaks_height)
 
+    periods = hour_to_Timedelta(1/(3600*freqs[psd_peaks]))
+
     print_psd_stats(data, freqs, psd, psd_peaks)
-    FIGDIM = (1, 2)
-    plt.figure(figsize=(16, 5))
+
+    FIGDIM = (2, 2)
+    plt.figure(figsize=(16, 10))
     ax = []
 
     ## AUTOCORRELATION
@@ -187,31 +191,60 @@ def autocorr_and_psd_analysis(data: pd.Series, header='Power', peaks_height:floa
 
     ## PSD
     ax.append(plt.subplot(*FIGDIM, 2))
-    plt.plot(freqs*3600, psd, '-b', label=header+' PSD')
+    if double_sided: 
+        plt.plot(fft.fftshift(freqs)*3600, fft.fftshift(psd), '-b', label=header+' PSD')
+    else: 
+        plt.plot(freqs*3600, psd, '-b', label=header+' PSD')
     plt.plot(freqs[psd_peaks]*3600, psd[psd_peaks], 'xr', label='Main PSD Peaks')
     plt.legend(loc='upper right')
     plt.xlabel('Frequency (1/hour)')
     plt.ylabel('Power/Frequency (dB)')
     plt.grid()
 
+    ## PLOT MOST IMPORTANT PERIOD
+    ax.append(plt.subplot(*FIGDIM, 3))
+    colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k']
+    periods = periods[:2]
+    idx = np.multiply(Timedelta_to_hour(periods), fs*3600)
+    idx = [int(x) for x in idx]
 
+    plt.plot(data.index, data, label='Main Data')
+    plt.plot(data.index[::idx[0]], data[::idx[0]], colors[0]+'x', label=str(periods[0]))
+    plt.legend(loc='upper right')
+    plt.xlabel('Date/Time')
+    plt.ylabel(header)
+    plt.title(header + f' against Date/Time with main period marked')
+
+    ## PLOT SECOND MOST IMPORTANT PERIOD
+    ax.append(plt.subplot(*FIGDIM, 4))
+    plt.plot(data.index, data, label='Main Data')
+    plt.plot(data.index[::idx[1]], data[::idx[1]], colors[1]+'x', label=str(periods[1]))
+    plt.legend(loc='upper right')
+    plt.xlabel('Date/Time')
+    plt.ylabel(header)
+    plt.title(header + f' against Date/Time with 2nd main period marked')
+
+    plt.tight_layout()
     plt.show()
 
+    return periods
+
+
 ## HELPER AND UTILITIES
-def hour_to_Timedelta(h: float | list[float], unit:str='h') -> pd.Timedelta | list[pd.Timedelta]:
-    if type(h) == float: return pd.Timedelta(h, unit=unit)
-    elif hasattr(h, '__len__'): return [pd.Timedelta(i, unit=unit) for i in h]
-    else: return None
+def hour_to_Timedelta(h: float | np.float_ | list[float] | list[np.float_], unit:str='h') -> pd.Timedelta | list[pd.Timedelta]:
+    if hasattr(h, '__len__') and type(h) != str: return [hour_to_Timedelta(i) for i in h]
+    elif type(h) == float or type(h) == np.float_: return pd.Timedelta(h, unit=unit)
+    else: raise TypeError('Unexpected Input to Function hour_to_Timedelta!')
 
 
 def Timedelta_to_hour(t:pd.Timedelta | list[pd.Timedelta] | str) -> float | list[float]:
-    if hasattr(t, '__len__') and type(t) != str: [val.total_seconds()/3600 for val in t]
+    if hasattr(t, '__len__') and type(t) != str and type(t) != pd.Timedelta: return [Timedelta_to_hour(val) for val in t]
     elif type(t) == pd.Timedelta: return t.total_seconds()/3600
     else: return pd.Timedelta(t).total_seconds()/3600
 
 
 def find_nearest(array:any, val:any=0) -> any:
-    if hasattr(val, '__len__') and type(val) != str: return [find_nearest(array, i) for i in val]
+    if hasattr(val, '__len__'): return [find_nearest(array, i) for i in val]
     diff_idx = np.abs(array - val).argmin()
     return array[diff_idx] if type(array) != pd.Series else array.iloc[diff_idx], diff_idx
 
