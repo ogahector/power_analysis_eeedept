@@ -1,3 +1,11 @@
+"""
+This is Hector Oga's Library
+For the Summer 2024 UROP on Server Room 1005 Power Analysis 
+Find here all the functions used to streamline 
+The data analysis process
+13/09/24
+"""
+
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
