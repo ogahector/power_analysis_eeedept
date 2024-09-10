@@ -332,3 +332,40 @@ def plot_raw_data(df:pd.DataFrame | list[pd.DataFrame], figsize:tuple=(16, 5), c
         ax[0].set_title("All CPU Usages in Time")
         plt.tight_layout()
         plt.show()
+
+def plot_hourly_av(data:pd.Series, header:str='', figsize:tuple=(16, 5)) -> None:
+    hourly_av = data.groupby(data.index.hour).apply(list).mean()
+    hours = np.arange(24)
+
+    plt.figure(figsize=figsize)
+    plt.plot(hours, hourly_av, '-b', label=header+' Hourly Av')
+    plt.xticks(hours, [str(i) for i in hours])
+    plt.xlabel('Date/Time')
+    plt.ylabel(header)
+    plt.title(header+' Hourly Average Throughout a Day')
+    plt.show()
+
+
+def plot_weekly_hourly_av(data:pd.Series, header:str='', figsize:tuple=(16, 5), serially:bool=False) -> None:
+    daily_hourly_av = data.groupby([data.index.weekday, data.index.hour]).apply(list).apply(np.mean)
+    hours = np.arange(24)
+    days = np.arange(7)
+    colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k']
+    days_of_the_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+    time_scaler = (days)*24 if serially else np.zeros(len(days))
+
+    plt.figure(figsize=figsize)
+    for i, color in enumerate(colors):
+        plt.plot(hours+time_scaler[i], daily_hourly_av[i], 
+                    color=color, linestyle='-', marker='o', label=f'{header} on {days_of_the_week[i]}')
+    if serially:
+        plt.xticks(range(0, 24*7, 24), days_of_the_week)
+    else:
+        plt.xticks(hours, [str(hour) for hour in hours])
+    if not serially: plt.legend(loc='upper right')
+    plt.xlabel('Weekly Hourly Average')
+    plt.ylabel(header)
+    plt.grid()
+    plt.title(header+' throughout the day on the average week')
+    plt.show()
